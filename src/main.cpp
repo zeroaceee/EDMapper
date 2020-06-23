@@ -2,11 +2,12 @@
 
 int main()
 {
-	g_process_id = Edmapper::GetProcessID(L"notepad.exe");
-	gProc_handle = Edmapper::OpenProcessHandle(g_process_id);
-	g_base = Edmapper::GetModuleBase(L"notepad.exe");
+	if (Edmapper::GetRawDataFromFile("test.dll"))
+	{
+		// code here
+	}
 
-	std::printf("Base : 0x%p\n",(void*)g_base);
 
+	delete[] raw_data;
 	std::cin.get();
 }

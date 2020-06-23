@@ -16,6 +16,9 @@
     <Filter Include="Source Files\memory">
       <UniqueIdentifier>{8a862081-6242-49f0-b106-69d8dee90bfd}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\PortableExe">
+      <UniqueIdentifier>{ca1c1df1-c158-4a5b-bf75-9a9fe7a29263}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -28,6 +31,9 @@
     </ClInclude>
     <ClInclude Include="main_header.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="pe\portable_executable.h">
+      <Filter>Source Files\PortableExe</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
