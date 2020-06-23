@@ -1,3 +1,4 @@
+# useless visual studio files , executables and objects
 /.vs
 /x64
 /src/x64
