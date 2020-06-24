@@ -13,5 +13,5 @@ namespace Edmapper{
 // remove this from global if possible
 std::uint32_t g_process_id;
 std::uintptr_t g_base;
-std::vector<wchar_t> raw_data;
+std::vector<std::uint8_t> raw_data;
 std::size_t raw_dataSize;
