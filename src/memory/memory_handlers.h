@@ -6,6 +6,7 @@
 #include <string_view>
 #include <stdint.h>
 #include <fstream>
+#include <vector>
 
 #pragma warning( disable : 6289)
 
@@ -23,10 +24,10 @@ using process_handle = std::unique_ptr<HANDLE, close_handle>;
 std::unique_ptr<HANDLE,close_handle> gProc_handle;
 
 namespace memory{
-	inline std::uint32_t GetProcessID(std::string_view process_name);
+	inline std::uint32_t GetProcessID(std::wstring_view process_name);
 	inline process_handle OpenProcessHandle(const std::uint32_t process_id);
-	inline std::uintptr_t GetModuleBase(std::string_view module_name);
-	inline bool GetRawDataFromFile(std::string_view file_name);
+	inline std::uintptr_t GetModuleBase(std::wstring_view module_name);
+	inline bool GetRawDataFromFile(std::wstring_view file_name);
 
 	template<class T>
 	inline T Read(std::uintptr_t address)
@@ -47,7 +48,7 @@ namespace memory{
 }
 
 
-std::uint32_t memory::GetProcessID(std::string_view process_name) {
+std::uint32_t memory::GetProcessID(std::wstring_view process_name) {
 	PROCESSENTRY32 processentry;
 
 	const std::unique_ptr<HANDLE, close_handle>
@@ -82,7 +83,7 @@ process_handle memory::OpenProcessHandle(const std::uint32_t process_id)
 
 extern std::uint32_t g_process_id;
 
-std::uintptr_t memory::GetModuleBase(std::string_view module_name)
+std::uintptr_t memory::GetModuleBase(std::wstring_view module_name)
 {
 	const std::unique_ptr<HANDLE, close_handle> 
 		snapshot_handle(CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, g_process_id));
@@ -91,35 +92,39 @@ std::uintptr_t memory::GetModuleBase(std::string_view module_name)
 	entry.dwSize = sizeof(MODULEENTRY32);
 
 	while (Module32Next(snapshot_handle.get(), &entry)) {
-		if (!strcmp(entry.szModule, module_name.data()))
+		if (!wcscmp(entry.szModule, module_name.data()))
 			return reinterpret_cast<std::uintptr_t>(entry.modBaseAddr);
 	}
 	return 0;
 }
 
 
-extern std::uint8_t* raw_data;
+extern std::vector<wchar_t> raw_data;
 extern std::size_t raw_dataSize;
 
-bool memory::GetRawDataFromFile(std::string_view file_name)
+
+
+bool memory::GetRawDataFromFile(std::wstring_view file_name)
 {
-	std::ifstream file(file_name.data(), std::ifstream::binary);
+    std::wifstream file(file_name.data(), std::wifstream::binary);
+
 	if (file)
 	{
 		file.seekg(0, file.end);
 		raw_dataSize = file.tellg();
 		file.seekg(0, file.beg);
-
-		raw_data = new std::uint8_t[raw_dataSize];
-
-		if (!raw_data)
-			return false;
 		
-		file.read(reinterpret_cast<char*>(raw_data), raw_dataSize);
+		// resize our vector to allocate enough space for our raw data capactiy will be extended automatically
+		 raw_data.resize(raw_dataSize);
+
+		file.read(raw_data.data(), raw_dataSize);
 		
 		file.close();
 		return true;
 	}
 	else
+	{
 		return false;
+	}
+	
 }
