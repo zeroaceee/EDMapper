@@ -4,7 +4,7 @@
 
 namespace portable_exe{
 	inline bool IsValidImage();
-	inline void MapImageSections(void* &image, PIMAGE_NT_HEADERS pnt_headers);
+	inline void CopyImageSections(void* &image, PIMAGE_NT_HEADERS pnt_headers);
 }
 
 // make this shit private
@@ -39,7 +39,7 @@ bool portable_exe::IsValidImage()
 }
 
 
-void portable_exe::MapImageSections(void* &image, PIMAGE_NT_HEADERS pnt_headers)
+void portable_exe::CopyImageSections(void* &image, PIMAGE_NT_HEADERS pnt_headers)
 {
 	for (int i = 0; i < pnt_headers->FileHeader.NumberOfSections; i++) {
 		

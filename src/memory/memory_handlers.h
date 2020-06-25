@@ -31,8 +31,6 @@ namespace memory{
 	inline process_handle OpenProcessHandle(const std::uint32_t process_id);
 	inline std::uintptr_t GetModuleBase(std::string_view module_name);
 	inline bool GetRawDataFromFile(std::string_view file_name);
-	inline void AllocateMemoryInProcess(void* &mem_address,std::size_t size_to_allocate);
-	inline void FreeAllocatedMemoryInProcess(void* &mem_address);
 
 	template<class T>
 	inline T Read(std::uintptr_t address)
@@ -119,7 +117,7 @@ bool memory::GetRawDataFromFile(std::string_view file_name)
 		raw_dataSize = file.tellg();
 		file.seekg(0, file.beg);
 
-		// resize our vector to allocate enough space for our raw data capactiy will be extended automatically
+		// resize our vector to allocate enough space for our raw data (capactiy will be extended automatically)
 		raw_data.resize(raw_dataSize);
 		
 		file.read(reinterpret_cast<char*>(raw_data.data()), raw_dataSize);
@@ -134,14 +132,3 @@ bool memory::GetRawDataFromFile(std::string_view file_name)
 		return false;
 }
 
-
-void memory::AllocateMemoryInProcess(void* &mem_address, std::size_t size_to_allocate)
-{
-	mem_address = VirtualAllocEx(gProc_handle.get(), nullptr, size_to_allocate, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-}
-
-
-void memory::FreeAllocatedMemoryInProcess(void* &mem_address)
-{
-	VirtualFreeEx(gProc_handle.get(), mem_address, 0, MEM_RELEASE);
-}

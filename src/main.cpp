@@ -27,19 +27,37 @@ int main()
 		std::cout << "Image is valid." << '\n';
 	}
 		
-	// allocate memory in target process so we can use it to copy our shit into it
+	// allocate memory in target process
 
 	const auto image_size = pnt_headers->OptionalHeader.SizeOfImage;
 	void* mapped_image = nullptr;
-	Edmapper::AllocateMemoryInProcess(mapped_image, image_size);
+	
+	mapped_image = VirtualAllocEx(gProc_handle.get(), nullptr, image_size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 
 	if (mapped_image == nullptr)
 	{
-		std::cerr << "Failed to allocate memory." << '\n';
+		std::cerr << "Failed to allocate memory in target process." << '\n';
 		return -1;
 	}
 	
-	// copy sections into mapped image.
+	// create a local image to copy stuff to
+	
+	void* local_image = nullptr;
+	local_image = VirtualAlloc(nullptr, image_size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+
+	if (local_image == nullptr)
+	{
+		std::cerr << "Failed to allocate memory locally." << '\n';
+		return -1;
+	}
+
+	// copy all headers from our dll image.
+	std::memcpy(local_image,raw_data.data(),pnt_headers->OptionalHeader.SizeOfHeaders);
+
+	// better make a struct to hold our local and dll headers so we can access them anytime.
+
+	// copy sections into local image.
+	Edmapper::CopyImageSections(local_image,pnt_headers);
 
 
 	// fix relocations
@@ -52,7 +70,7 @@ int main()
 
 	std::printf("Everything worked.\n");
 
-	Edmapper::FreeAllocatedMemoryInProcess(mapped_image);
+	VirtualFreeEx(gProc_handle.get(), mapped_image, 0, MEM_RELEASE);
 
 	std::cin.get();
 }
