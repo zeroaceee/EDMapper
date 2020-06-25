@@ -23,11 +23,16 @@ struct close_handle {
 using process_handle = std::unique_ptr<HANDLE, close_handle>;
 std::unique_ptr<HANDLE,close_handle> gProc_handle;
 
+// we should use const for vars that aren't going to be changed
+// maybe add noexcept to some functions.
+
 namespace memory{
 	inline std::uint32_t GetProcessID(std::string_view process_name);
 	inline process_handle OpenProcessHandle(const std::uint32_t process_id);
 	inline std::uintptr_t GetModuleBase(std::string_view module_name);
 	inline bool GetRawDataFromFile(std::string_view file_name);
+	inline void AllocateMemoryInProcess(void* &mem_address,std::size_t size_to_allocate);
+	inline void FreeAllocatedMemoryInProcess(void* &mem_address);
 
 	template<class T>
 	inline T Read(std::uintptr_t address)
@@ -127,4 +132,16 @@ bool memory::GetRawDataFromFile(std::string_view file_name)
 	}
 	else
 		return false;
+}
+
+
+void memory::AllocateMemoryInProcess(void* &mem_address, std::size_t size_to_allocate)
+{
+	mem_address = VirtualAllocEx(gProc_handle.get(), nullptr, size_to_allocate, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+}
+
+
+void memory::FreeAllocatedMemoryInProcess(void* &mem_address)
+{
+	VirtualFreeEx(gProc_handle.get(), mem_address, 0, MEM_RELEASE);
 }

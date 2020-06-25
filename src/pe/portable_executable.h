@@ -4,7 +4,7 @@
 
 namespace portable_exe{
 	inline bool IsValidImage();
-	inline void MapImageSections(std::vector<std::uint8_t> & image, PIMAGE_NT_HEADERS pnt_headers);
+	inline void MapImageSections(void* &image, PIMAGE_NT_HEADERS pnt_headers);
 }
 
 // make this shit private
@@ -29,13 +29,19 @@ bool portable_exe::IsValidImage()
 		return false;
 	}
 	
+	if (pnt_headers->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+	{
+		std::printf("[-]Image is not 64 bit.\n");
+		return false;
+	}
+
 	return true;
 }
 
 
-void portable_exe::MapImageSections(std::vector<std::uint8_t>& image, PIMAGE_NT_HEADERS pnt_headers)
+void portable_exe::MapImageSections(void* &image, PIMAGE_NT_HEADERS pnt_headers)
 {
 	for (int i = 0; i < pnt_headers->FileHeader.NumberOfSections; i++) {
-		// write sections to our target application.
+		
 	}
 }
