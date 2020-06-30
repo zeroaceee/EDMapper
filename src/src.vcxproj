@@ -145,9 +145,9 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="memory\memory_handlers.h" />
-    <ClInclude Include="main_header.h" />
-    <ClInclude Include="pe\portable_executable.h" />
+    <ClInclude Include="memory\memory_handlers.hpp" />
+    <ClInclude Include="main_header.hpp" />
+    <ClInclude Include="pe\portable_executable.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

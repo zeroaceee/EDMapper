@@ -26,13 +26,13 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="memory\memory_handlers.h">
-      <Filter>Source Files\memory</Filter>
-    </ClInclude>
-    <ClInclude Include="main_header.h">
+    <ClInclude Include="main_header.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="pe\portable_executable.h">
+    <ClInclude Include="memory\memory_handlers.hpp">
+      <Filter>Source Files\memory</Filter>
+    </ClInclude>
+    <ClInclude Include="pe\portable_executable.hpp">
       <Filter>Source Files\PortableExe</Filter>
     </ClInclude>
   </ItemGroup>

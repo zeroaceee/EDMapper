@@ -102,8 +102,8 @@ std::uintptr_t memory::GetModuleBase(std::string_view module_name)
 }
 
 
-extern std::vector<std::uint8_t> raw_data;
-extern std::size_t raw_dataSize;
+extern std::uint8_t* rawDll_data;
+extern std::size_t rawDll_dataSize;
 
 #pragma warning( disable : 4996)
 
@@ -114,18 +114,18 @@ bool memory::GetRawDataFromFile(std::string_view file_name)
 	if (file)
 	{
 		file.seekg(0, file.end);
-		raw_dataSize = file.tellg();
+		rawDll_dataSize = file.tellg();
 		file.seekg(0, file.beg);
 
-		// resize our vector to allocate enough space for our raw data (capactiy will be extended automatically)
-		raw_data.resize(raw_dataSize);
-		
-		file.read(reinterpret_cast<char*>(raw_data.data()), raw_dataSize);
+		rawDll_data = new std::uint8_t[rawDll_dataSize];
 
-		// https://stackoverflow.com/questions/28253569/what-happens-if-i-never-call-close-on-an-open-file-stream
-		// closing file causes excpection TODO : add excpection handling. let the fstream closes our file
-		// cuz fstream already closes the file object once it goes out of scope
-		// file.close();
+		if (!rawDll_data)
+			return false;
+		
+		file.read(reinterpret_cast<char*>(rawDll_data), rawDll_dataSize);
+
+		// fstream already closes our file when it goes out of scoop
+		// if we tried to close it we will get an exception
 		return true;
 	}
 	else

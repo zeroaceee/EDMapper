@@ -1,17 +1,22 @@
-#include "main_header.h"
+#include "main_header.hpp"
 
 int main()
 {
 	// get process id
 
 	g_process_id = Edmapper::GetProcessID("notepad.exe");
-	
-	if (g_process_id == 0)
+
+	if (g_process_id == 0) {
+		std::printf("[-]Couldn't get process ID\n");
 		return -1;
+	}
+
 
 	// open handle to process
 
-	gProc_handle =  Edmapper::OpenProcessHandle(g_process_id);
+	gProc_handle = Edmapper::OpenProcessHandle(g_process_id);
+
+	// add check for handle here.
 
 	// read dll
 
@@ -19,45 +24,32 @@ int main()
 	{
 		std::cout << "read dll." << '\n';
 	}
-		
+
 	// validate image
 
 	if (Edmapper::IsValidImage())
 	{
 		std::cout << "Image is valid." << '\n';
 	}
-		
-	// allocate memory in target process
 
-	const auto image_size = pnt_headers->OptionalHeader.SizeOfImage;
-	void* mapped_image = nullptr;
+	// allocate local image 
+	const auto image_size = pOldnt_headers->OptionalHeader.SizeOfImage;
+	const auto image_base = pOldnt_headers->OptionalHeader.ImageBase;
+	void* l_image = nullptr;
+	l_image = VirtualAlloc(nullptr, image_size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
 	
-	mapped_image = VirtualAllocEx(gProc_handle.get(), nullptr, image_size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-
-	if (mapped_image == nullptr)
+	if (!l_image)
 	{
-		std::cerr << "Failed to allocate memory in target process." << '\n';
-		return -1;
-	}
-	
-	// create a local image to copy stuff to
-	
-	void* local_image = nullptr;
-	local_image = VirtualAlloc(nullptr, image_size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-
-	if (local_image == nullptr)
-	{
-		std::cerr << "Failed to allocate memory locally." << '\n';
+		delete[] rawDll_data;
 		return -1;
 	}
 
 	// copy all headers from our dll image.
-	std::memcpy(local_image,raw_data.data(),pnt_headers->OptionalHeader.SizeOfHeaders);
+	std::memcpy(l_image, rawDll_data,pOldnt_headers->OptionalHeader.SizeOfHeaders);
 
-	// better make a struct to hold our local and dll headers so we can access them anytime.
 
 	// copy sections into local image.
-	Edmapper::CopyImageSections(local_image,pnt_headers);
+	 Edmapper::CopyImageSections(l_image,pOldnt_headers);
 
 
 	// fix relocations
@@ -69,8 +61,8 @@ int main()
 	// call shellcode
 
 	std::printf("Everything worked.\n");
-
-	VirtualFreeEx(gProc_handle.get(), mapped_image, 0, MEM_RELEASE);
+	VirtualFree(nullptr, 0, MEM_RELEASE);
+	delete[] rawDll_data;
 
 	std::cin.get();
 }
