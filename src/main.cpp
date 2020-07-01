@@ -49,14 +49,16 @@ int main()
 
 
 	// copy sections into local image.
-	 Edmapper::CopyImageSections(l_image,pOldnt_headers);
+	Edmapper::CopyImageSections(l_image,pOldnt_headers);
 
 
 	// fix relocations
 
 
 	// fix imports
+	Edmapper::FixImageImports(l_image, pOldnt_headers);
 
+	// TODO fix TLS callbacks
 
 	// call shellcode
 

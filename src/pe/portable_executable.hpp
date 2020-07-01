@@ -5,6 +5,7 @@
 namespace portable_exe{
 	inline bool IsValidImage();
 	inline void CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers);
+	inline bool FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers);
 }
 
 // make this shit private
@@ -49,17 +50,39 @@ void portable_exe::CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers)
 	// then we probably need to index it to get to our structs.
 	PIMAGE_SECTION_HEADER pSection = IMAGE_FIRST_SECTION(pnt_headers);
 
-	for (size_t i = 0; i < pnt_headers->FileHeader.NumberOfSections; i++)
+	for (size_t i = 0; i < pnt_headers->FileHeader.NumberOfSections; i++, pSection++)
 	{
-		const auto copyfrom = rawDll_data + pSection->PointerToRawData;
-		// if reserved memory differs from the allocated memory page then we need to relocate base address or else sections won't be copied correctly
-		auto copyto = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(image) + pSection->VirtualAddress);
-		const auto size = reinterpret_cast<std::size_t>(rawDll_data + pSection->SizeOfRawData);
-		
-		 std::memcpy(copyto,copyfrom,size);
+		auto dest = reinterpret_cast<void*>((reinterpret_cast<std::uintptr_t>(image) + pSection->VirtualAddress));
+		const auto src = rawDll_data + pSection->PointerToRawData;
+		const auto size = pSection->SizeOfRawData;
 
-		 pSection++; // this is totally wrong and its going in a wrong direction we can analyze this in memory.
+		std::memcpy(dest,src , size);
 	}
 
-	std::printf("done\n");
+	std::printf("Sections copied.\n");
+}
+
+
+bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
+{
+	// or do assert better maybe?
+	if (!image)
+		return false;
+
+	PIMAGE_IMPORT_DESCRIPTOR pImportDesc = nullptr;
+
+	pImportDesc = reinterpret_cast<PIMAGE_IMPORT_DESCRIPTOR>(
+		reinterpret_cast<std::uintptr_t>(image) + pnt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
+	
+	if (!pImportDesc)
+		return false;
+
+	const auto pmoduleName = reinterpret_cast<char*>(
+		reinterpret_cast<std::uintptr_t>(image) + pImportDesc->Name);
+
+	std::cout << pmoduleName << '\n';
+
+	// why can't we use it with rawdll_data?? we add base address since its just an rva lol 
+
+	return true;
 }
