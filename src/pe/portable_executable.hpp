@@ -47,7 +47,7 @@ void portable_exe::CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers)
 {
 	// Immediately following the PE header in memory is an array of IMAGE_SECTION_HEADERs. The number of elements in this array is given in the PE header (the IMAGE_NT_HEADER.FileHeader.NumberOfSections field).
 	// basically this will return a pointer to an array 
-	// then we probably need to index it to get to our structs.
+	// then we need to index it to get to our structs.
 	PIMAGE_SECTION_HEADER pSection = IMAGE_FIRST_SECTION(pnt_headers);
 
 	for (size_t i = 0; i < pnt_headers->FileHeader.NumberOfSections; i++, pSection++)
@@ -65,24 +65,24 @@ void portable_exe::CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers)
 
 bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
 {
-	// or do assert better maybe?
-	if (!image)
-		return false;
 
 	PIMAGE_IMPORT_DESCRIPTOR pImportDesc = nullptr;
 
+	// we can use this offset to our .idata section because we have the same exact one that we copied from our 
+	// dll so basically adding our image + our dll idata section is like doing it from our headers if we wanted to.
 	pImportDesc = reinterpret_cast<PIMAGE_IMPORT_DESCRIPTOR>(
 		reinterpret_cast<std::uintptr_t>(image) + pnt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
 	
 	if (!pImportDesc)
+	{
+		delete[] rawDll_data;
 		return false;
-
-	const auto pmoduleName = reinterpret_cast<char*>(
-		reinterpret_cast<std::uintptr_t>(image) + pImportDesc->Name);
-
-	std::cout << pmoduleName << '\n';
-
-	// why can't we use it with rawdll_data?? we add base address since its just an rva lol 
+	}
+		
+	// https://www.joachim-bauch.de/tutorials/loading-a-dll-from-memory/
+	// https://docs.microsoft.com/en-us/previous-versions/ms809762(v=msdn.10)?redirectedfrom=MSDN#pe-file-imports
+	// https://blog.kowalczyk.info/articles/pefileformat.html
+	
 
 	return true;
 }
