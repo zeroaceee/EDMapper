@@ -52,13 +52,19 @@ int main()
 	Edmapper::CopyImageSections(l_image,pOldnt_headers);
 
 
-	// fix relocations
-
-
 	// fix imports
-	Edmapper::FixImageImports(l_image, pOldnt_headers);
+	if (!Edmapper::FixImageImports(l_image, pOldnt_headers))
+	{
+		std::cerr << "[ERROR] couldn't fix image imports" << '\n';
+		delete[] rawDll_data;
+		return -1;
+	}
+		
+	// fix relocation
+
 
 	// TODO fix TLS callbacks
+
 
 	// call shellcode
 
