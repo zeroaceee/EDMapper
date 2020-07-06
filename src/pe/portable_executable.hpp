@@ -1,11 +1,19 @@
 #pragma once
 #include <windows.h>
-#include <vector>
+#include <functional>
 
 namespace portable_exe{
 	inline bool IsValidImage();
 	inline void CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers);
 	inline bool FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers);
+	inline void FixImageRelocations(void* imageBase, PIMAGE_NT_HEADERS pnt_headers);
+
+	// L l = L() basically because we are doing default params and we need to initialzie it to std::less<void*>
+	// how we are not passing third param? to l(a,b) because its already in l == std::less<void*>
+	template<class A, class B, class L = std::less<void*>>
+	inline bool CheckHigher_addressInMem(const A a,const B b,L l = L()) {
+		return l(a, b); // call std::less to do comparing for us
+	}
 }
 
 // make this shit private
@@ -199,4 +207,50 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
 	
 
 	return true;
+}
+
+
+void portable_exe::FixImageRelocations(void* imageBase, PIMAGE_NT_HEADERS pnt_headers)
+{
+	// get relocation directory pointer by adding imageBase + RVA
+	auto pRelocation_dir = reinterpret_cast<PIMAGE_BASE_RELOCATION>(
+		reinterpret_cast<std::uintptr_t>(imageBase) + pnt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
+	
+	// same as above but we are getting the size here
+	const auto relocation_size = static_cast<DWORD>(
+		reinterpret_cast<std::uintptr_t>(imageBase) + pnt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size);
+
+	// if both of them are invalid then return and free resources
+	if (!pRelocation_dir && !relocation_size)
+	{
+		delete[] rawDll_data;
+		return;
+	}
+
+	// get end of .reloc section by adding the start of section + size of section
+	const auto relocation_end = reinterpret_cast<unsigned long long>(pRelocation_dir) + relocation_size;
+
+	// we can't compare address's using < or > operators since we will get undefined behavior
+	// since both of them doesn't belong to each other or they are not pointing to the same object/array etc..
+	// so we use std::less to compare 2 void pointers
+	const auto isLess = 
+		CheckHigher_addressInMem<void*, void*>(imageBase, reinterpret_cast<void*>(pnt_headers->OptionalHeader.ImageBase));
+	
+	// calculate delta
+	// https://sciencing.com/calculate-delta-between-two-numbers-5893964.html
+
+	ULONGLONG delta = 0;
+	if (isLess)
+	{
+		// cast to ULONGLONG to perform calculations
+		delta = pnt_headers->OptionalHeader.ImageBase - reinterpret_cast<ULONGLONG>(imageBase);
+	}
+	else
+	{
+		delta = reinterpret_cast<ULONGLONG>(imageBase) - pnt_headers->OptionalHeader.ImageBase;
+	}
+
+	
+
+	
 }
