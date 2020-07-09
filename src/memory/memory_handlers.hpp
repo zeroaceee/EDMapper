@@ -36,14 +36,14 @@ namespace memory{
 	inline T Read(std::uintptr_t address)
 	{
 		T buffer;
-		ReadProcessMemory(gProc_handle.get(), reinterpret_cast<LPVOID>(address), & buffer, sizeof(T), std::nullptr_t);
+		ReadProcessMemory(gProc_handle.get(), reinterpret_cast<LPVOID>(address), &buffer, sizeof(T), std::nullptr_t);
 		return buffer;
 	}
 
-	template<class H>
-	inline bool Write(std::uintptr_t address, H value)
+	
+	inline bool Write(std::uintptr_t address, void* buffer)
 	{
-		if (WriteProcessMemory(gProc_handle.get(), reinterpret_cast<LPVOID>(address),&value,sizeof(H),std::nullptr_t))
+		if (WriteProcessMemory(gProc_handle.get(), reinterpret_cast<LPVOID>(address),buffer,sizeof(buffer), nullptr))
 			return true;
 		else
 			return false;

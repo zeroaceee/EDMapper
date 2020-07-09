@@ -6,7 +6,7 @@ namespace portable_exe{
 	inline bool IsValidImage();
 	inline void CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers);
 	inline bool FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers);
-	inline void FixImageRelocations(void* imageBase, PIMAGE_NT_HEADERS pnt_headers);
+	inline void FixImageRelocations(void* mapped_image,void* local_image, PIMAGE_NT_HEADERS pnt_headers);
 
 	// L l = L() basically because we are doing default params and we need to initialzie it to std::less<void*>
 	// how we are not passing third param? to l(a,b) because its already in l == std::less<void*>
@@ -210,31 +210,26 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
 }
 
 
-void portable_exe::FixImageRelocations(void* imageBase, PIMAGE_NT_HEADERS pnt_headers)
+void portable_exe::FixImageRelocations(void* mapped_image, void* local_image, PIMAGE_NT_HEADERS pnt_headers)
 {
-	// get relocation directory pointer by adding imageBase + RVA
+	// get relocation directory pointer by adding imageBase + RVA (AKA the struct that has our .reloc info)
 	auto pRelocation_dir = reinterpret_cast<PIMAGE_BASE_RELOCATION>(
-		reinterpret_cast<std::uintptr_t>(imageBase) + pnt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
+		reinterpret_cast<std::uintptr_t>(local_image) + pnt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
 	
-	// same as above but we are getting the size here
-	const auto relocation_size = static_cast<DWORD>(
-		reinterpret_cast<std::uintptr_t>(imageBase) + pnt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size);
 
-	// if both of them are invalid then return and free resources
-	if (!pRelocation_dir && !relocation_size)
+	
+	if (!pRelocation_dir)
 	{
 		delete[] rawDll_data;
 		return;
 	}
 
-	// get end of .reloc section by adding the start of section + size of section
-	const auto relocation_end = reinterpret_cast<unsigned long long>(pRelocation_dir) + relocation_size;
 
 	// we can't compare address's using < or > operators since we will get undefined behavior
 	// since both of them doesn't belong to each other or they are not pointing to the same object/array etc..
 	// so we use std::less to compare 2 void pointers
 	const auto isLess = 
-		CheckHigher_addressInMem<void*, void*>(imageBase, reinterpret_cast<void*>(pnt_headers->OptionalHeader.ImageBase));
+		CheckHigher_addressInMem<void*, void*>(mapped_image, reinterpret_cast<void*>(pnt_headers->OptionalHeader.ImageBase));
 	
 	// calculate delta
 	// https://sciencing.com/calculate-delta-between-two-numbers-5893964.html
@@ -243,14 +238,97 @@ void portable_exe::FixImageRelocations(void* imageBase, PIMAGE_NT_HEADERS pnt_he
 	if (isLess)
 	{
 		// cast to ULONGLONG to perform calculations
-		delta = pnt_headers->OptionalHeader.ImageBase - reinterpret_cast<ULONGLONG>(imageBase);
+		delta = pnt_headers->OptionalHeader.ImageBase - reinterpret_cast<ULONGLONG>(mapped_image);
 	}
 	else
 	{
-		delta = reinterpret_cast<ULONGLONG>(imageBase) - pnt_headers->OptionalHeader.ImageBase;
+		delta = reinterpret_cast<ULONGLONG>(mapped_image) - pnt_headers->OptionalHeader.ImageBase;
 	}
 
-	
 
-	
+	// we will keep looping through pages until we encounter a null pointer which then means we are done and got to the end of it.
+	while (pRelocation_dir->VirtualAddress)
+	{
+		 // get amount of entries basically
+         // this represent a location 
+         // (offset within the 4 KB page if 32bit or 8 KB page if on 64bit pointed out by the VirtualAddress member in the IMAGE_BASE_RELOCATION struct)
+         // which needs to be fixed up
+
+          // The .reloc section contains a serie of blocks
+          // There is one block for each 4 KB page if 32bit or 8 KB page if on 64bit page that contains virtual addresses
+          // The SizeOfBlock holds the size of the block in bytes (including the size of the IMAGE_BASE_RELOCATION struct)
+         // so to get how many entries in our block we do this calculation 
+
+          // sizeOfBlock has the size of our block + size of IMAGE_BASE_RELOCATION struct
+         // so we need to subtract 8 bytes aka (size of IMAGE_BASE_RELOCATION) then divide by 2 which is size WORD 
+        // since each entry is 2 bytes 
+
+		// why we doing this inside our loop?
+		// because we will be advancing to the second block and we need to get new block size of our second page in memory
+		const auto amountof_entries = pRelocation_dir->SizeOfBlock - sizeof(PIMAGE_BASE_RELOCATION) / sizeof(WORD);
+
+		//  Immediately following the IMAGE_BASE_RELOCATION structure is a variable number of WORD values
+		// AKA an array of WORD values
+		// we go 1 more byte after our relocation directory to get to it
+		auto entry = reinterpret_cast<PWORD>(pRelocation_dir + 1);
+
+		// loop through all entries (aka where we should apply our relocations) in our block of relocation
+		for (size_t i = 0; i < amountof_entries; i++)
+		{
+			// we are doing a right-shift operation to get to the higher 4 bits inside our current WORD value
+			// note that doing bitwise operations like this won't change the value of our WORD var unless we assign it with the assignment operator "="
+			// we go 12 bits to the right to get the higher 4 bits in our WORD var
+			// for IA-64 executables the relocation type is seem to be always type of IMAGE_REL_BASED_DIR64
+			// which basically means write our (whole) delta value to where the relocation should be applied
+
+			// note we can use both hex or dec with bitwise operators the result will be the same
+			// 0x0C = 12(dec)
+			// 0xFFF = 4095(dec)
+			if (entry[i] >> 0x0C == IMAGE_REL_BASED_DIR64)
+			{
+				// get an offset pointer to the address that needs to be relocated
+				// we need this to be a pointer to std::uintptr_t so we can modify its contents 
+
+				// (entry[i] & 0xFFF) = lowest 12 bits which is an RVA to the address where we want to apply relocations
+				// this might be confusing but i will explain it
+				// when we want to extract specific bits from a variable
+				// we can compare it with another value that has x amount of bits set and nothing more
+				// so 0xFFF in binary is (1111 1111 1111) <- 12 bits
+				// and when we do AND operation on it 
+				// this is what happens ex
+
+				/*
+				USING THE (&) OPERATOR
+				1111 1101 1001 0101 // lets say this is our WORD value in memory (16 bits)
+				0000 1111 1111 1111 // and this is 0xFFF bitmask
+				---- ---- ---- ----
+				0000 1101 1001 0101 // <- see only the 8 bits are left and nothing more 
+
+				by doing this too it won't change our WORD value only gets the lowest 12 bits
+				// unless we assign it to it.
+
+				why use & operator since the & operator won't change any data or won't result in any change 
+				after the operation is done if a bit is 1 it will stay the same if 0 it will be 0 simple
+				its literally grabbing values from our WORD variable
+				*/
+				// this is called bit-masking ^^
+
+				auto offset_to_relocation = reinterpret_cast<std::uintptr_t*>(
+					reinterpret_cast<std::uintptr_t>(local_image) + pRelocation_dir->VirtualAddress + (entry[i] & 0xFFF));
+
+				// derf and add delta value
+				*offset_to_relocation += delta;
+			}
+			// advance to the next WORD value
+			entry++;
+		}
+
+		/*
+		go to the next block of memory
+		we add SizeOfBlock which contains the IMAGE_BASE_RELOCATION struct + entries to our original pointer to old block of relocation
+		so we can advance to the second block of reloctaion.
+		*/
+
+		pRelocation_dir = reinterpret_cast<PIMAGE_BASE_RELOCATION>(reinterpret_cast<std::uintptr_t>(pRelocation_dir + pRelocation_dir->SizeOfBlock));
+	}
 }
