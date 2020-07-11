@@ -41,9 +41,9 @@ namespace memory{
 	}
 
 	
-	inline bool Write(std::uintptr_t address, void* buffer)
+	inline bool Write(std::uintptr_t address, void* buffer,size_t sizeOfdata)
 	{
-		if (WriteProcessMemory(gProc_handle.get(), reinterpret_cast<LPVOID>(address),buffer,sizeof(buffer), nullptr))
+		if (WriteProcessMemory(gProc_handle.get(), reinterpret_cast<LPVOID>(address), buffer, sizeOfdata, nullptr))
 			return true;
 		else
 			return false;

@@ -198,13 +198,14 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
 		// pFirst_thunkData->u1.Function : is the address of the function that we are currently importing
 		// if we tried to call it , it will crash so we need to add base address of MODULE DLL + Function offset
 		// so it can get called normally.
+
+		// why storing result address in FirstThunk not OriginalFirstThunk since FirstThunk is the one that gets overwritten by windows loader
+		// see https://docs.microsoft.com/en-us/archive/msdn-magazine/2002/march/inside-windows-an-in-depth-look-into-the-win32-portable-executable-file-format-part-2
 		pFirst_thunkData->u1.Function = Function_address;
 
 		// go to next imported dll in our array using pointer Arithmetic
 		pImportDesc++;
 	}
-
-	
 
 	return true;
 }

@@ -93,7 +93,7 @@ int main()
 
 	
 	// write content of our dll aka local image into the allocated memory in target process
-	if (!Edmapper::Write(reinterpret_cast<std::uintptr_t>(m_image),l_image))
+	if (!Edmapper::Write(reinterpret_cast<std::uintptr_t>(m_image),l_image, image_size))
 	{
 		delete[] rawDll_data;
 		VirtualFree(l_image, 0, MEM_RELEASE);
@@ -104,7 +104,7 @@ int main()
 
 	std::printf("Wrote image to target process.\n");
 
-	// TODO : make an option to check TLS callbacks section if it needs to be fixed or not
+	
 
 	// call shellcode
 
@@ -112,17 +112,18 @@ int main()
 	// pOldnt_headers->OptionalHeader.AddressOfEntryPoint : is an RVA from base address
 	const auto Entryaddress = reinterpret_cast<std::uintptr_t>(m_image) + pOldnt_headers->OptionalHeader.AddressOfEntryPoint;
 
-	// dont forget to close handles lol
 
+	
 	BYTE shellcode[] =
 	{
 	    0x50, // push rax save old register so we don't corrupt it
-		0x48, 0xB8, 0xFF, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, // mov rax,0xff00efbeadde00ff <- this value is just a place that will get replaced by our entrypoint pointer
-		0xFF, 0xE0, // jmp rax 
+		0x48, 0xB8, 0xFF, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, // mov rax,0xff00efbeadde00ff <- this value is just a place that will get replaced by our entrypoint pointer 
+		0x48, 0x83, 0xEC, 0x28, // sub rsp,0x28 (align the stack and shadow space allocation)
+		0xFF, 0xD0, // call rax 
+		0x48, 0x83, 0xC4, 0x28, // add rsp,0x28
 		0x58, // pop rax
-		0xCC // int3 return
+		0xC3 // ret
 	};
-
 
 	// copy address to shellcode
 	*(std::uintptr_t*)(shellcode + 3) = Entryaddress;
@@ -141,8 +142,7 @@ int main()
 	std::printf("[+]Allocated memory for shellcode at : %p \n",pShellCode);
 
 
-	// copy shellcode to memory
-	if (!Edmapper::Write((std::uintptr_t)pShellCode,shellcode))
+	if (!Edmapper::Write((std::uintptr_t)pShellCode,shellcode,sizeof(shellcode)))
 	{
 		delete[] rawDll_data;
 		VirtualFreeEx(gProc_handle.get(), m_image, 0, MEM_RELEASE);
@@ -166,6 +166,7 @@ int main()
 	}
 
 	std::printf("[+] DLL mapped.\n");
+	CloseHandle(thread_h);
 	// free mapped image?? why lol iwant to understand this
 	VirtualFreeEx(gProc_handle.get(), m_image, 0, MEM_RELEASE);
 	VirtualFreeEx(gProc_handle.get(), pShellCode, 0, MEM_RELEASE);
