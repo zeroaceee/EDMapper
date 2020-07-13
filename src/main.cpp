@@ -1,10 +1,12 @@
-#include "main_header.hpp"
+#include "edmapper.hpp"
+
 
 int main()
 {
 	// get process id
 
 	g_process_id = Edmapper::GetProcessID("notepad.exe");
+
 
 	if (g_process_id == 0) {
 		std::printf("[-]Couldn't get process ID\n");
@@ -62,6 +64,7 @@ int main()
 
 	std::printf("Imports fixed.\n");
 		
+
 	// allocate image in target process
 	const auto image_base = pOldnt_headers->OptionalHeader.ImageBase;
 	void* m_image = nullptr;
@@ -112,8 +115,7 @@ int main()
 	// pOldnt_headers->OptionalHeader.AddressOfEntryPoint : is an RVA from base address
 	const auto Entryaddress = reinterpret_cast<std::uintptr_t>(m_image) + pOldnt_headers->OptionalHeader.AddressOfEntryPoint;
 
-
-	
+	/*
 	BYTE shellcode[] =
 	{
 	    0x50, // push rax save old register so we don't corrupt it
@@ -123,10 +125,26 @@ int main()
 		0x48, 0x83, 0xC4, 0x28, // add rsp,0x28
 		0x58, // pop rax
 		0xC3 // ret
-	};
+	};*/
+
 
 	// copy address to shellcode
-	*(std::uintptr_t*)(shellcode + 3) = Entryaddress;
+	// *(std::uintptr_t*)(shellcode + 3) = Entryaddress;
+
+	// hardcoded shellcode
+	BYTE shellcode[] = {
+		0x50, // push rax
+		0x48, 0xB8, 0xFF, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, // mov rax,address
+		0x48, 0x31, 0xD2, // xor rdx,rdx
+		0x48, 0x83, 0xC2, 0x01, //  add rdx,byte +0x0
+		0x48, 0x83, 0xEC, 0x28,
+		0xFF, 0xD0, // call rax 
+		0x48, 0x83, 0xC4, 0x28, // add rsp,0x28
+		0x58, // pop rax
+		0xC3
+	};
+
+	*(std::uintptr_t*)(shellcode + 3) = 0x180001020; // Hardcoded offset
 
 	// allocate memory for our shellcode inside target process
 	auto pShellCode = VirtualAllocEx(gProc_handle.get(), nullptr, sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
@@ -165,10 +183,15 @@ int main()
 		return -1;
 	}
 
+	// wait for the thread to finish executing shellcode.
+	WaitForSingleObject(thread_h, INFINITE);
+
+
 	std::printf("[+] DLL mapped.\n");
 	CloseHandle(thread_h);
 	// free mapped image?? why lol iwant to understand this
-	VirtualFreeEx(gProc_handle.get(), m_image, 0, MEM_RELEASE);
+	// when we inject and use MessageBoxA the target process should have it too in its import directory. else we will crash.
+	//VirtualFreeEx(gProc_handle.get(), m_image, 0, MEM_RELEASE);
 	VirtualFreeEx(gProc_handle.get(), pShellCode, 0, MEM_RELEASE);
 	VirtualFree(l_image, 0, MEM_RELEASE);
 	delete[] rawDll_data;

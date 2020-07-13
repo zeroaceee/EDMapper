@@ -193,7 +193,6 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
 			return false;
 		}
 
-		
 		// couldn't find any explanation about this but
 		// pFirst_thunkData->u1.Function : is the address of the function that we are currently importing
 		// if we tried to call it , it will crash so we need to add base address of MODULE DLL + Function offset

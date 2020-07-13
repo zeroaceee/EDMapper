@@ -24,16 +24,19 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="edmapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="main_header.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="memory\memory_handlers.hpp">
       <Filter>Source Files\memory</Filter>
     </ClInclude>
     <ClInclude Include="pe\portable_executable.hpp">
       <Filter>Source Files\PortableExe</Filter>
+    </ClInclude>
+    <ClInclude Include="edmapper.hpp">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

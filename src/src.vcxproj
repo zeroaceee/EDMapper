@@ -142,11 +142,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="edmapper.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="edmapper.hpp" />
     <ClInclude Include="memory\memory_handlers.hpp" />
-    <ClInclude Include="main_header.hpp" />
     <ClInclude Include="pe\portable_executable.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
