@@ -1,12 +1,14 @@
 #pragma once
 #include <windows.h>
 #include <functional>
+#include "../edmapper.hpp"
+
 
 namespace portable_exe{
-	inline bool IsValidImage();
-	inline void CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers);
-	inline bool FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers);
-	inline void FixImageRelocations(void* mapped_image,void* local_image, PIMAGE_NT_HEADERS pnt_headers);
+	inline PIMAGE_NT_HEADERS IsValidImage(std::uint8_t* &rawdll_image);
+	inline void CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image);
+	inline bool FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image);
+	inline void FixImageRelocations(void* mapped_image,void* local_image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image);
 
 	// L l = L() basically because we are doing default params and we need to initialzie it to std::less<void*>
 	// how we are not passing third param? to l(a,b) because its already in l == std::less<void*>
@@ -16,42 +18,39 @@ namespace portable_exe{
 	}
 }
 
-// make this shit private
-PIMAGE_DOS_HEADER pOlddos_header = nullptr;
-PIMAGE_NT_HEADERS pOldnt_headers = nullptr;
 
-bool portable_exe::IsValidImage()
+PIMAGE_NT_HEADERS portable_exe::IsValidImage(std::uint8_t* &rawdll_image)
 {
-	pOlddos_header = reinterpret_cast<PIMAGE_DOS_HEADER>(rawDll_data);
+	const auto p_dosHeader = reinterpret_cast<PIMAGE_DOS_HEADER>(rawdll_image);
 
-	if (pOlddos_header->e_magic != IMAGE_DOS_SIGNATURE)
+	if (p_dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
 	{
 		std::printf("[-]Invalid Image type.\n");
-		delete[] rawDll_data;
-		return false;
+		delete[] rawdll_image;
+		return nullptr;
 	}
 		
-	pOldnt_headers = reinterpret_cast<PIMAGE_NT_HEADERS>(rawDll_data + pOlddos_header->e_lfanew);
+	const auto p_ntHeaders = reinterpret_cast<PIMAGE_NT_HEADERS>(rawdll_image + p_dosHeader->e_lfanew);
 
-	if (pOldnt_headers->Signature != IMAGE_NT_SIGNATURE)
+	if (p_ntHeaders->Signature != IMAGE_NT_SIGNATURE)
 	{
 		std::printf("[-]Invalid nt_headers signature.\n");
-		delete[] rawDll_data;
-		return false;
+		delete[] rawdll_image;
+		return nullptr;
 	}
 	
-	if (pOldnt_headers->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+	if (p_ntHeaders->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC)
 	{
 		std::printf("[-]Image is not 64 bit.\n");
-		delete[] rawDll_data;
-		return false;
+		delete[] rawdll_image;
+		return nullptr;
 	}
 
-	return true;
+	return p_ntHeaders;
 }
 
 
-void portable_exe::CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers)
+void portable_exe::CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image)
 {
 	// Immediately following the PE header in memory is an array of IMAGE_SECTION_HEADERs. The number of elements in this array is given in the PE header (the IMAGE_NT_HEADER.FileHeader.NumberOfSections field).
 	// basically this will return a pointer to an array 
@@ -61,7 +60,7 @@ void portable_exe::CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers)
 	for (size_t i = 0; i < pnt_headers->FileHeader.NumberOfSections; i++, pSection++)
 	{
 		auto dest = reinterpret_cast<void*>((reinterpret_cast<std::uintptr_t>(image) + pSection->VirtualAddress));
-		const auto src = rawDll_data + pSection->PointerToRawData;
+		const auto src = rawdll_image + pSection->PointerToRawData;
 		const auto size = pSection->SizeOfRawData;
 
 		std::memcpy(dest,src , size);
@@ -71,31 +70,8 @@ void portable_exe::CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers)
 }
 
 
-bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
+bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image)
 {
-	// links
-	// https://stackoverflow.com/questions/42413937/why-pe-need-original-first-thunkoft
-	// https://github.com/not-wlan/drvmap/blob/master/drvmap/drv_image.cpp
-	// https://github.com/z175/kdmapper/blob/master/kdmapper/portable_executable.cpp
-	// https://docs.microsoft.com/en-us/previous-versions/ms809762(v=msdn.10)?redirectedfrom=MSDN#pe-file-imports
-	// https://docs.microsoft.com/en-us/windows/win32/debug/pe-format#the-idata-section
-	// https://docs.microsoft.com/en-us/archive/msdn-magazine/2002/march/inside-windows-an-in-depth-look-into-the-win32-portable-executable-file-format-part-2
-	// https://stackoverflow.com/questions/7673754/pe-format-iat-questions
-	// 
-
-	// https://web.archive.org/web/20180103163005/https://blogs.msdn.microsoft.com/oldnewthing/20100318-00/?p=14563
-
-	// use timestamp to compare and if its the same then just skip all of this bullshit
-	// we can compare our own .DLL timestamp with the one like kernel32.dll (windows dll) and if they match
-	// and if we loaded it at prefered address then we don't need to resolve function pointers.
-	// i don't think we can do this since ASLR is ENABLED
-	// https://en.wikipedia.org/wiki/Dynamic-link_library search for "bound" binding...
-
-	// basically binding is when we use for example "kernel32.dll" from windows inside our "hack.dll"
-	// "kernel32.dll" will have a timestamp (when it got compiled) and if we check the timestamp
-	// from our dll (aka by getting them from our dll nt_headers same as line : [109]) and it matched the same current available one then there is no need 
-	// to fix imports as they will have fixed address's (aka correct ones) and the loader will be happy!
-
 	PIMAGE_IMPORT_DESCRIPTOR pImportDesc = nullptr;
 
 	// we can use this offset to our .idata section because we have the same exact one that we copied from our 
@@ -107,7 +83,7 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
 	// if we couldn't get the address of our .idata section then cleanup & return
 	if (!pImportDesc)
 	{
-		delete[] rawDll_data;
+		delete[] rawdll_image;
 		return false;
 	}
 		
@@ -124,7 +100,7 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
 		// if we couldn't obatin base of MODULE DLL return false
 		if (!ModuleBase)
 		{
-			delete[] rawDll_data;
+			delete[] rawdll_image;
 			return false;
 		}
 		
@@ -144,7 +120,7 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
 		// if not found  cleanup resources & abort something is wrong
 		if (!pFirst_thunkData && !pOriginalFirst_thunkData)
 		{
-			delete[] rawDll_data;
+			delete[] rawdll_image;
 			return false;
 		}
 		
@@ -185,23 +161,23 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
 			Function_address = reinterpret_cast<std::uintptr_t>(GetProcAddress(ModuleBase, pImport->Name));
 		}		
 
-		// if wasn't found then cleanup and return false since something should be wrong here
-		if (!Function_address)
-		{
-			std::cerr << "[ERROR]Couldn't find address of function!" << " " << ":" << "Inside MODULE DLL :" << ModuleName << '\n';
-			delete[] rawDll_data;
-			return false;
-		}
-
 		// couldn't find any explanation about this but
 		// pFirst_thunkData->u1.Function : is the address of the function that we are currently importing
 		// if we tried to call it , it will crash so we need to add base address of MODULE DLL + Function offset
 		// so it can get called normally.
 
-		// why storing result address in FirstThunk not OriginalFirstThunk since FirstThunk is the one that gets overwritten by windows loader
-		// see https://docs.microsoft.com/en-us/archive/msdn-magazine/2002/march/inside-windows-an-in-depth-look-into-the-win32-portable-executable-file-format-part-2
-		pFirst_thunkData->u1.Function = Function_address;
-
+		if (Function_address)
+		{
+			// why storing result address in FirstThunk not OriginalFirstThunk since FirstThunk is the one that gets overwritten by windows loader
+			pFirst_thunkData->u1.Function = Function_address;
+		}
+		else
+		{
+			std::cerr << "[ERROR]Couldn't find address of function!" << " " << ":" << "Inside MODULE DLL :" << ModuleName << '\n';
+			delete[] rawdll_image;
+			return false;
+		}
+	
 		// go to next imported dll in our array using pointer Arithmetic
 		pImportDesc++;
 	}
@@ -210,7 +186,7 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers)
 }
 
 
-void portable_exe::FixImageRelocations(void* mapped_image, void* local_image, PIMAGE_NT_HEADERS pnt_headers)
+void portable_exe::FixImageRelocations(void* mapped_image, void* local_image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image)
 {
 	// get relocation directory pointer by adding imageBase + RVA (AKA the struct that has our .reloc info)
 	auto pRelocation_dir = reinterpret_cast<PIMAGE_BASE_RELOCATION>(
@@ -220,7 +196,7 @@ void portable_exe::FixImageRelocations(void* mapped_image, void* local_image, PI
 	
 	if (!pRelocation_dir)
 	{
-		delete[] rawDll_data;
+		delete[] rawdll_image;
 		return;
 	}
 

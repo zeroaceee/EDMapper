@@ -1,30 +1,27 @@
 #pragma once
 #include <iostream>
 #include <stdint.h>
-#include <thread>
-#include <chrono>
+#include <filesystem>
+#include <memory>
 #include "memory/memory_handlers.hpp"
 #include "pe/portable_executable.hpp"
 
 
 
 namespace Edmapper {
-	using namespace memory;
-	using namespace portable_exe;
 
-	struct dll_map
+	class dll_map
 	{
-
+		// private by default
+		std::uint32_t process_id = 0;
+		std::uint8_t* rawDll_data = nullptr;
+		std::size_t rawDll_dataSize = 0;
+		PIMAGE_NT_HEADERS pnt_headers = nullptr;
+		PVOID m_image = nullptr;
+		PVOID l_image = nullptr;
 	public:
-		dll_map(std::string_view proccess_name,std::string_view dll_path);
-	private:
-
+		bool dll_map_init(std::string_view proccess_name,std::string_view dll_path);
+		bool map_dll();
 	};
 }
 
-
-// remove this from global 
-std::uint32_t g_process_id;
-std::uintptr_t g_base;
-std::uint8_t* rawDll_data;
-std::size_t rawDll_dataSize;

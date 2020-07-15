@@ -6,44 +6,77 @@
 #include <string_view>
 #include <stdint.h>
 #include <fstream>
-#include <vector>
 
 #pragma warning( disable : 6289)
+#pragma warning( disable : 4996)
 
-struct close_handle {
-	using pointer = HANDLE;
-	void operator()(HANDLE handle)
-	{
-		if (handle != NULL || handle != INVALID_HANDLE_VALUE)
-			CloseHandle(handle);
-	}
-};
-
-// make those private later lol and make code look cleaner
-using process_handle = std::unique_ptr<HANDLE, close_handle>;
-std::unique_ptr<HANDLE,close_handle> gProc_handle;
-
-// we should use const for vars that aren't going to be changed
-// maybe add noexcept to some functions.
 
 namespace memory{
-	inline std::uint32_t GetProcessID(std::string_view process_name);
-	inline process_handle OpenProcessHandle(const std::uint32_t process_id);
+	inline bool GetProcessID(std::string_view process_name);
 	inline std::uintptr_t GetModuleBase(std::string_view module_name);
-	inline bool GetRawDataFromFile(std::string_view file_name);
+	inline bool GetRawDataFromFile(std::string_view file_name,std::uint8_t* &raw_data,std::size_t &sizeOfRawData);
+
+
+	namespace {
+		std::uint32_t process_id;
+
+		struct close_handle {
+			using pointer = HANDLE;
+			void operator()(HANDLE handle)
+			{
+				if (handle != NULL || handle != INVALID_HANDLE_VALUE)
+					CloseHandle(handle);
+			}
+		};
+
+		using process_handle = std::unique_ptr<HANDLE, close_handle>;
+		std::unique_ptr<HANDLE, close_handle> proc_handle;
+	}
+
+	static HANDLE get_handle()
+	{
+		return proc_handle.get();
+	}
+
+
+	static std::uint32_t return_processid()
+	{
+		return process_id;
+	}
+
+	static void set_processid(std::uint32_t pid)
+	{
+		process_id = pid;
+	}
+
+	inline bool OpenProcessHandle(const std::uint32_t process_id)
+	{
+		if (process_id == 0)
+			return false;
+
+		process_handle handle(OpenProcess(PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD, false, process_id));
+
+		if (handle.get() == nullptr)
+			return false;
+
+		// move ownership of object to ours.
+		proc_handle = std::move(handle);
+
+		return true;
+	}
 
 	template<class T>
 	inline T Read(std::uintptr_t address)
 	{
 		T buffer;
-		ReadProcessMemory(gProc_handle.get(), reinterpret_cast<LPVOID>(address), &buffer, sizeof(T), std::nullptr_t);
+		ReadProcessMemory(memory::get_handle(), reinterpret_cast<LPVOID>(address), &buffer, sizeof(T), std::nullptr_t);
 		return buffer;
 	}
 
-	
-	inline bool Write(std::uintptr_t address, void* buffer,size_t sizeOfdata)
+
+	inline bool Write(std::uintptr_t address, void* buffer, size_t sizeOfdata)
 	{
-		if (WriteProcessMemory(gProc_handle.get(), reinterpret_cast<LPVOID>(address), buffer, sizeOfdata, nullptr))
+		if (WriteProcessMemory(memory::get_handle(), reinterpret_cast<LPVOID>(address), buffer, sizeOfdata, nullptr))
 			return true;
 		else
 			return false;
@@ -51,45 +84,32 @@ namespace memory{
 }
 
 
-std::uint32_t memory::GetProcessID(std::string_view process_name) {
+bool memory::GetProcessID(std::string_view process_name) {
 	PROCESSENTRY32 processentry;
 
 	const std::unique_ptr<HANDLE, close_handle>
 		snapshot_handle(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
 
 	if (snapshot_handle.get() == INVALID_HANDLE_VALUE)
-		return 0;
+		return false;
 
 	processentry.dwSize = sizeof(PROCESSENTRY32);
 
 	while (Process32Next(snapshot_handle.get(), &processentry) == TRUE) {
-		if (process_name.compare(processentry.szExeFile) == 0)
-			return processentry.th32ProcessID;
+		if (process_name.compare(processentry.szExeFile) == 0) 
+		{
+			memory::set_processid(processentry.th32ProcessID);
+			return true;
+		}
 	}
-	return 0;
+	return false;
 }
 
-
-process_handle memory::OpenProcessHandle(const std::uint32_t process_id)
-{
-	if (process_id == 0)
-		return nullptr;
-
-	process_handle handle(OpenProcess(PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD, false, process_id));
-
-	if (handle.get() == nullptr)
-		return nullptr;
-
-	return handle;
-}
-
-
-extern std::uint32_t g_process_id;
 
 std::uintptr_t memory::GetModuleBase(std::string_view module_name)
 {
 	const std::unique_ptr<HANDLE, close_handle> 
-		snapshot_handle(CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, g_process_id));
+		snapshot_handle(CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, memory::return_processid()));
 	
 	MODULEENTRY32 entry;
 	entry.dwSize = sizeof(MODULEENTRY32);
@@ -102,27 +122,23 @@ std::uintptr_t memory::GetModuleBase(std::string_view module_name)
 }
 
 
-extern std::uint8_t* rawDll_data;
-extern std::size_t rawDll_dataSize;
 
-#pragma warning( disable : 4996)
-
-bool memory::GetRawDataFromFile(std::string_view file_name)
+bool memory::GetRawDataFromFile(std::string_view file_name, std::uint8_t* &raw_data, std::size_t &sizeOfRawData)
 {
     std::ifstream file(file_name.data(), std::ifstream::binary);
 
 	if (file)
 	{
 		file.seekg(0, file.end);
-		rawDll_dataSize = file.tellg();
+		sizeOfRawData = file.tellg();
 		file.seekg(0, file.beg);
 
-		rawDll_data = new std::uint8_t[rawDll_dataSize];
+		raw_data = new std::uint8_t[sizeOfRawData];
 
-		if (!rawDll_data)
+		if (!raw_data)
 			return false;
 		
-		file.read(reinterpret_cast<char*>(rawDll_data), rawDll_dataSize);
+		file.read(reinterpret_cast<char*>(raw_data), sizeOfRawData);
 
 		// fstream already closes our file when it goes out of scoop
 		// if we tried to close it we will get an exception
