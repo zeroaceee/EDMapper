@@ -31,4 +31,6 @@ c++ language and to explain how does manual mapping works step by step.
 - https://stackoverflow.com/questions/10493411/what-is-bit-masking
 
 
-
+## few notes
+when we try to manual map a dll that uses `MessageBoxA` for example the Target
+process must have it in its (import table) `.idata` section or else we will crash. 
