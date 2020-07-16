@@ -42,20 +42,22 @@ process must have it in its (import table) `.idata` section or else we will cras
 
 ## Shellcode explanation
 ``` c++
-BYTE shellcode[] = {
+	BYTE shellcode[] = {
 		0x50, // push rax
 		0x48, 0xB8, 0xFF, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, // mov rax,address
+		0x52, // push rdx
 		0x48, 0x31, 0xD2, // xor rdx,rdx
 		0x48, 0x83, 0xC2, 0x01, //  add rdx,byte +0x0
 		0x48, 0x83, 0xEC, 0x28, // sub rsp,0x28
 		0xFF, 0xD0, // call rax 
 		0x48, 0x83, 0xC4, 0x28, // add rsp,0x28
 		0x58, // pop rax
+		0x5A, // pop rdx
 		0xC3 // ret
 	};
 
 
-
+	// note 0x1020 is an RVA to where the location that i want to jmp to. to get there we need to add image base + rva
 	*(std::uintptr_t*)(shellcode + 3) = (std::uintptr_t)m_image + 0x1020; // Hardcoded offset
 ```
 
