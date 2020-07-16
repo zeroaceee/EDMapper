@@ -23,6 +23,7 @@ PIMAGE_NT_HEADERS portable_exe::IsValidImage(std::uint8_t* &rawdll_image)
 {
 	const auto p_dosHeader = reinterpret_cast<PIMAGE_DOS_HEADER>(rawdll_image);
 
+	// check the "MZ" chars to check if its a valid PE file.
 	if (p_dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
 	{
 		std::printf("[-]Invalid Image type.\n");
@@ -32,6 +33,7 @@ PIMAGE_NT_HEADERS portable_exe::IsValidImage(std::uint8_t* &rawdll_image)
 		
 	const auto p_ntHeaders = reinterpret_cast<PIMAGE_NT_HEADERS>(rawdll_image + p_dosHeader->e_lfanew);
 
+	// check if our nt headers is valid or not by checking its signature
 	if (p_ntHeaders->Signature != IMAGE_NT_SIGNATURE)
 	{
 		std::printf("[-]Invalid nt_headers signature.\n");
@@ -39,6 +41,7 @@ PIMAGE_NT_HEADERS portable_exe::IsValidImage(std::uint8_t* &rawdll_image)
 		return nullptr;
 	}
 	
+	// check if image is 64 bit
 	if (p_ntHeaders->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC)
 	{
 		std::printf("[-]Image is not 64 bit.\n");
@@ -57,16 +60,18 @@ void portable_exe::CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers,
 	// then we need to index it to get to our structs.
 	PIMAGE_SECTION_HEADER pSection = IMAGE_FIRST_SECTION(pnt_headers);
 
+	// loop through each section until we get to the last one
 	for (size_t i = 0; i < pnt_headers->FileHeader.NumberOfSections; i++, pSection++)
 	{
+		// get pointer to where we want to copy the sections to which will be at location where our section offset start from.
 		auto dest = reinterpret_cast<void*>((reinterpret_cast<std::uintptr_t>(image) + pSection->VirtualAddress));
+		// get pointer to our section data
 		const auto src = rawdll_image + pSection->PointerToRawData;
+		// get the size of the section data
 		const auto size = pSection->SizeOfRawData;
-
+		// copy sections from our dll image to our local image 1 by 1
 		std::memcpy(dest,src , size);
 	}
-
-	std::printf("Sections copied.\n");
 }
 
 

@@ -38,3 +38,37 @@ open cmd navigate to where the EDMapper.exe is located and type
 ## few notes
 when we try to manual map a dll that uses `MessageBoxA` for example the Target
 process must have it in its (import table) `.idata` section or else we will crash. 
+
+
+## Shellcode explanation
+``` c++
+BYTE shellcode[] = {
+		0x50, // push rax
+		0x48, 0xB8, 0xFF, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, // mov rax,address
+		0x48, 0x31, 0xD2, // xor rdx,rdx
+		0x48, 0x83, 0xC2, 0x01, //  add rdx,byte +0x0
+		0x48, 0x83, 0xEC, 0x28, // sub rsp,0x28
+		0xFF, 0xD0, // call rax 
+		0x48, 0x83, 0xC4, 0x28, // add rsp,0x28
+		0x58, // pop rax
+		0xC3 // ret
+	};
+
+
+
+	*(std::uintptr_t*)(shellcode + 3) = (std::uintptr_t)m_image + 0x1020; // Hardcoded offset
+```
+
+first please see assembly ref and read on x64 shadow space before reading this so you have a better understanding about why we are reserving space in the stack
+
+before i start talking about what does this shellcode does please note that you can use normal functions to achieve this exact way but am using assembly since it gives you more control on whats happening when executing it
+
+
+now lets start with this shellcode first we need to put our offset in some place well we use the registery `rax` but before we use it we push it to the stack to save its old state then we can move our offset into it after that we push `rdx` to stack too. then we XOR rdx,rdx to zero out any garbage data that was in there before .then we add 1 bit to rdx .then we subtract some space for x64 shadowing and re-align the stack. then we `call rax` which will jmp to our address after finishing we clean up the stack by adding the same amount we subtracted before then we `pop rax` and `pop rdx` then we return from our shellcode to let the target process continue execution.
+
+where did the hardcoded offset came from? shouldn't we call our dllEntry point.
+
+- the answer is yes but for me there was a `cmp` instruction which compared edx with 1 and if edx wasn't `1` it will jmp and never execute my code. and to fix that problem i just hardcoded this shellcode + offset where the cmp instruction is so i can call my code you can see from the screenshot below :
+
+
+<img src="https://i.imgur.com/2J7L7pY.jpg">

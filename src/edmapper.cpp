@@ -53,6 +53,8 @@ bool Edmapper::dll_map::map_dll()
 	// copy sections into local image.
 	portable_exe::CopyImageSections(this->l_image, this->pnt_headers, this->rawDll_data);
 
+	std::printf("Sections copied.\n");
+
 	// fix imports
 
 	if (!portable_exe::FixImageImports(this->l_image, this->pnt_headers, this->rawDll_data))
