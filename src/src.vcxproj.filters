@@ -19,6 +19,9 @@
     <Filter Include="Source Files\PortableExe">
       <UniqueIdentifier>{ca1c1df1-c158-4a5b-bf75-9a9fe7a29263}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hook">
+      <UniqueIdentifier>{e09b62a3-1fc3-4e1e-90fc-d7dcc55126df}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -37,6 +40,9 @@
     </ClInclude>
     <ClInclude Include="edmapper.hpp">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hook\iat_hook.hpp">
+      <Filter>Source Files\hook</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

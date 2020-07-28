@@ -12,14 +12,14 @@
 
 
 namespace memory{
-	inline bool GetProcessID(std::string_view process_name);
-	inline std::uintptr_t GetModuleBase(std::string_view module_name);
-	inline bool GetRawDataFromFile(std::string_view file_name,std::uint8_t* &raw_data,std::size_t &sizeOfRawData);
+	inline bool GetProcessID(const std::string_view process_name);
+	inline std::uintptr_t GetModuleBase(const std::string_view module_name);
+	inline bool GetRawDataFromFile(const std::string_view file_name,std::uint8_t* &raw_data,std::size_t &sizeOfRawData);
 
+	
 
 	namespace {
-		std::uint32_t process_id;
-
+		// this struct will get called whenever a handle needs to be closed.
 		struct close_handle {
 			using pointer = HANDLE;
 			void operator()(HANDLE handle)
@@ -29,22 +29,25 @@ namespace memory{
 			}
 		};
 
+		std::uint32_t process_id;
 		using process_handle = std::unique_ptr<HANDLE, close_handle>;
 		std::unique_ptr<HANDLE, close_handle> proc_handle;
 	}
 
-	static HANDLE get_handle()
+	// what is inline here?
+	// https://stackoverflow.com/questions/22102919/static-vs-inline-for-functions-implemented-in-header-files
+	inline HANDLE get_handle()
 	{
 		return proc_handle.get();
 	}
 
 
-	static std::uint32_t return_processid()
+	inline std::uint32_t return_processid()
 	{
 		return process_id;
 	}
 
-	static void set_processid(std::uint32_t pid)
+	inline void set_processid(std::uint32_t pid)
 	{
 		process_id = pid;
 	}
@@ -65,26 +68,42 @@ namespace memory{
 		return true;
 	}
 
-	template<class T>
-	inline T Read(std::uintptr_t address)
+	
+	inline bool Read(std::uintptr_t address, void* buffer, size_t size)
 	{
-		T buffer;
-		ReadProcessMemory(memory::get_handle(), reinterpret_cast<LPVOID>(address), &buffer, sizeof(T), std::nullptr_t);
-		return buffer;
+		if (ReadProcessMemory(memory::get_handle(), reinterpret_cast<LPVOID>(address), buffer, size, nullptr))
+			return true;
+		else
+			return false;
+		
 	}
 
 
-	inline bool Write(std::uintptr_t address, void* buffer, size_t sizeOfdata)
+	inline bool Write(std::uintptr_t address, void* buffer, size_t size)
 	{
-		if (WriteProcessMemory(memory::get_handle(), reinterpret_cast<LPVOID>(address), buffer, sizeOfdata, nullptr))
+		if (WriteProcessMemory(memory::get_handle(), reinterpret_cast<LPVOID>(address), buffer, size, nullptr))
 			return true;
 		else
 			return false;
 	}
+
+	inline bool VirtualprotectExPage(std::uintptr_t address, size_t size,DWORD protection,PDWORD old_protection)
+	{
+		if (VirtualProtectEx(memory::get_handle(), reinterpret_cast<LPVOID>(address), size, protection, old_protection))
+			return true;
+		else
+			return false;
+			
+	}
+
+	inline std::size_t VirtualQueryExPage(std::uintptr_t address,MEMORY_BASIC_INFORMATION &mb)
+	{
+		return VirtualQueryEx(memory::get_handle(), reinterpret_cast<LPVOID>(address), &mb,sizeof(mb));
+	}
 }
 
 
-bool memory::GetProcessID(std::string_view process_name) {
+bool memory::GetProcessID(const std::string_view process_name) {
 	PROCESSENTRY32 processentry;
 
 	const std::unique_ptr<HANDLE, close_handle>
@@ -106,7 +125,7 @@ bool memory::GetProcessID(std::string_view process_name) {
 }
 
 
-std::uintptr_t memory::GetModuleBase(std::string_view module_name)
+std::uintptr_t memory::GetModuleBase(const std::string_view module_name)
 {
 	const std::unique_ptr<HANDLE, close_handle> 
 		snapshot_handle(CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, memory::return_processid()));
@@ -123,7 +142,7 @@ std::uintptr_t memory::GetModuleBase(std::string_view module_name)
 
 
 
-bool memory::GetRawDataFromFile(std::string_view file_name, std::uint8_t* &raw_data, std::size_t &sizeOfRawData)
+bool memory::GetRawDataFromFile(const std::string_view file_name, std::uint8_t* &raw_data, std::size_t &sizeOfRawData)
 {
     std::ifstream file(file_name.data(), std::ifstream::binary);
 

@@ -1,14 +1,13 @@
 #pragma once
 #include <windows.h>
-#include <functional>
 #include "../edmapper.hpp"
 
 
 namespace portable_exe{
 	inline PIMAGE_NT_HEADERS IsValidImage(std::uint8_t* &rawdll_image);
-	inline void CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image);
-	inline bool FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image);
-	inline void FixImageRelocations(void* mapped_image,void* local_image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image);
+	inline void CopyImageSections(const void* image,const PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image);
+	inline bool FixImageImports(const void* image, const PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image);
+	inline void FixImageRelocations(void* mapped_image,void* local_image, const PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image);
 
 	// L l = L() basically because we are doing default params and we need to initialzie it to std::less<void*>
 	// how we are not passing third param? to l(a,b) because its already in l == std::less<void*>
@@ -53,7 +52,7 @@ PIMAGE_NT_HEADERS portable_exe::IsValidImage(std::uint8_t* &rawdll_image)
 }
 
 
-void portable_exe::CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image)
+void portable_exe::CopyImageSections(const void* image, const PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image)
 {
 	// Immediately following the PE header in memory is an array of IMAGE_SECTION_HEADERs. The number of elements in this array is given in the PE header (the IMAGE_NT_HEADER.FileHeader.NumberOfSections field).
 	// basically this will return a pointer to an array 
@@ -75,7 +74,7 @@ void portable_exe::CopyImageSections(void* image, PIMAGE_NT_HEADERS pnt_headers,
 }
 
 
-bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image)
+bool portable_exe::FixImageImports(const void* image, const PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image)
 {
 	PIMAGE_IMPORT_DESCRIPTOR pImportDesc = nullptr;
 
@@ -122,6 +121,9 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers, s
 		pOriginalFirst_thunkData = reinterpret_cast<PIMAGE_THUNK_DATA>(
 			reinterpret_cast<std::uintptr_t>(image) + pImportDesc->OriginalFirstThunk);
 
+		// ^^  these array's points to  structs each struct contains either an ordinal number for an imported function name.
+		// difference is FirstThunk get overwritten by windows loader while OriginalFirstThunk does not and contains original information about imported functions.
+
 		// if not found  cleanup resources & abort something is wrong
 		if (!pFirst_thunkData && !pOriginalFirst_thunkData)
 		{
@@ -129,60 +131,66 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers, s
 			return false;
 		}
 		
-
-		// https://en.wikipedia.org/wiki/Bitwise_operation#AND
-		// Check if this bit is set, then import by ordinal
-		// https://docs.microsoft.com/en-us/windows/win32/debug/pe-format#import-directory-table
-
 		std::uintptr_t Function_address = 0;
 
-		// IMAGE_SNAP_BY_ORDINAL is a marco that checks if the highest bit is set or not in 
-		// PIMAGE_THUNK_DATA which is (u1.Ordinal)
-
-
-		// little note we can import using 2 ways 
-		// 1 - [ordinal] number is just a number that the windows loader use to find an import function
-		// 2 - by Function Name you can see how both works below
-
-		
-		// if set then import by ordinal otherwise import by name.
-		if (IMAGE_SNAP_BY_ORDINAL(pOriginalFirst_thunkData->u1.Ordinal))
+		// again we are using OriginalThunk data since its the one that guarantee us that we will have original information about this dll idata section.
+		// each u1.AddressOfData will point to a struct in memory called PIMAGE_IMPORT_BY_NAME
+		// each struct of type PIMAGE_IMPORT_BY_NAME contains an imported function name for example (MessageBoxA inside user32.dll)
+		// if we did not loop through all imported functions we will only get the first one and other ones will be ignored which is not what we want.
+		// so that's why we do this.
+		while (pOriginalFirst_thunkData->u1.AddressOfData != NULL)
 		{
-			// LOWORD marco gets the low-order word from the specified value
-			// read about GetProcAddress to understand more on msdn.
-			// then we cast it to a string to find our function address.
-			Function_address = reinterpret_cast<std::uintptr_t>(GetProcAddress(ModuleBase, reinterpret_cast<LPCSTR>(LOWORD(pOriginalFirst_thunkData->u1.Ordinal))));
+			    // IMAGE_SNAP_BY_ORDINAL is a marco that checks if the highest bit is set or not in 
+		        // PIMAGE_THUNK_DATA which is (u1.Ordinal)
+
+		       // little note we can import using 2 ways 
+		       // 1 - [ordinal] number is just a number that the windows loader use to find an import function
+		       // 2 - by Function Name you can see how both works below
+
+
+		      // if set then import by ordinal otherwise import by name.
+			if (IMAGE_SNAP_BY_ORDINAL(pOriginalFirst_thunkData->u1.Ordinal))
+			{
+				// LOWORD marco gets the low-order word from the specified value
+				// read about GetProcAddress to understand more on msdn.
+				// then we cast it to a string to find our function address.
+				Function_address = reinterpret_cast<std::uintptr_t>(GetProcAddress(ModuleBase, reinterpret_cast<LPCSTR>(LOWORD(pOriginalFirst_thunkData->u1.Ordinal))));
+			}
+			else
+			{
+				// pOriginalFirst_thunkData->u1.AddressOfData : is basically an rva to  PIMAGE_IMPORT_BY_NAME struct inside
+				// union PIMAGE_THUNK_DATA
+				// we can do the same thing using FirstThunk but i prefered to use OriginalFirstThunk cuz that's what its for (INT)
+				// Import Name Table
+				PIMAGE_IMPORT_BY_NAME pImport = reinterpret_cast<PIMAGE_IMPORT_BY_NAME>(
+					reinterpret_cast<std::uintptr_t>(image) + pOriginalFirst_thunkData->u1.AddressOfData);
+
+				// get the current function address from current imported dll
+				Function_address = reinterpret_cast<std::uintptr_t>(GetProcAddress(ModuleBase, pImport->Name));
+			}
+
+			// couldn't find any explanation about this but
+		    // pFirst_thunkData->u1.Function : is the address of the function that we are currently importing
+		    // if we tried to call it , it will crash so we need to add base address of MODULE DLL + Function offset
+		    // so it can get called normally.
+
+			if (Function_address)
+			{
+				// why storing result address in FirstThunk not OriginalFirstThunk since FirstThunk is the one that gets overwritten by windows loader
+				pFirst_thunkData->u1.Function = Function_address;
+			}
+			else
+			{
+				std::cerr << "[ERROR]Couldn't find address of function!" << " " << ":" << "Inside MODULE DLL :" << ModuleName << '\n';
+				delete[] rawdll_image;
+				return false;
+			}
+
+			// advance to second struct in our array to get imported function in current module.
+			pOriginalFirst_thunkData++;
+			pFirst_thunkData++;
 		}
-		else
-		{
-			// pOriginalFirst_thunkData->u1.AddressOfData : is basically an rva to  PIMAGE_IMPORT_BY_NAME struct inside
-			// union PIMAGE_THUNK_DATA
-			// we can do the same thing using FirstThunk but i prefered to use OriginalFirstThunk cuz that's what its for (INT)
-			// Import Name Table
-			PIMAGE_IMPORT_BY_NAME pImport = reinterpret_cast<PIMAGE_IMPORT_BY_NAME>(
-				reinterpret_cast<std::uintptr_t>(image) + pOriginalFirst_thunkData->u1.AddressOfData);
 
-			// get the current function address from current imported dll
-			Function_address = reinterpret_cast<std::uintptr_t>(GetProcAddress(ModuleBase, pImport->Name));
-		}		
-
-		// couldn't find any explanation about this but
-		// pFirst_thunkData->u1.Function : is the address of the function that we are currently importing
-		// if we tried to call it , it will crash so we need to add base address of MODULE DLL + Function offset
-		// so it can get called normally.
-
-		if (Function_address)
-		{
-			// why storing result address in FirstThunk not OriginalFirstThunk since FirstThunk is the one that gets overwritten by windows loader
-			pFirst_thunkData->u1.Function = Function_address;
-		}
-		else
-		{
-			std::cerr << "[ERROR]Couldn't find address of function!" << " " << ":" << "Inside MODULE DLL :" << ModuleName << '\n';
-			delete[] rawdll_image;
-			return false;
-		}
-	
 		// go to next imported dll in our array using pointer Arithmetic
 		pImportDesc++;
 	}
@@ -191,7 +199,7 @@ bool portable_exe::FixImageImports(void* image, PIMAGE_NT_HEADERS pnt_headers, s
 }
 
 
-void portable_exe::FixImageRelocations(void* mapped_image, void* local_image, PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image)
+void portable_exe::FixImageRelocations(void* mapped_image, void* local_image, const PIMAGE_NT_HEADERS pnt_headers, std::uint8_t* &rawdll_image)
 {
 	// get relocation directory pointer by adding imageBase + RVA (AKA the struct that has our .reloc info)
 	auto pRelocation_dir = reinterpret_cast<PIMAGE_BASE_RELOCATION>(

@@ -1,6 +1,6 @@
 #include "edmapper.hpp"
 
-bool Edmapper::dll_map::dll_map_init(std::string_view proccess_name, std::string_view dll_path)
+bool Edmapper::dll_map::map_dll(const std::string_view proccess_name, const std::string_view dll_path)
 {
 	// get process id
 
@@ -18,12 +18,6 @@ bool Edmapper::dll_map::dll_map_init(std::string_view proccess_name, std::string
 	if (!memory::GetRawDataFromFile(dll_path, this->rawDll_data, this->rawDll_dataSize))
 		return false;
 
-	return true;
-}
-
-
-bool Edmapper::dll_map::map_dll()
-{
 	// validate image
 	this->pnt_headers = portable_exe::IsValidImage(this->rawDll_data);
 
@@ -116,44 +110,27 @@ bool Edmapper::dll_map::map_dll()
 	const auto Entryaddress = reinterpret_cast<std::uintptr_t>(this->m_image) + this->pnt_headers->OptionalHeader.AddressOfEntryPoint;
 
 
-	/*
-	 non- working shellcode
-
-	BYTE shellcode[] =
-	{
-		0x50, // push rax save old register so we don't corrupt it
-		0x48, 0xB8, 0xFF, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, // mov rax,0xff00efbeadde00ff <- this value is just a place that will get replaced by our entrypoint pointer
-		0x48, 0x83, 0xEC, 0x28, // sub rsp,0x28 (align the stack and shadow space allocation)
-		0xFF, 0xD0, // call rax
-		0x48, 0x83, 0xC4, 0x28, // add rsp,0x28
-		0x58, // pop rax
-		0xC3 // ret
-	};
-
-
-	// copy address to shellcode
-	// *(std::uintptr_t*)(shellcode + 3) = Entryaddress;
-	*/
-
 	// hardcoded shellcode
 	BYTE shellcode[] = {
-		0x50, // push rax
-		0x48, 0xB8, 0xFF, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, // mov rax,address
-		0x52, // push rdx
+		0x50, // push rax save old register so we don't corrupt it
+		0x48, 0xB8, 0xFF, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, // mov rax,0xff00efbeadde00ff <- this value is just a place that will get replaced by our entrypoint pointer
+		0x52, // push rdx save old register so we don't corrupt it
 		0x48, 0x31, 0xD2, // xor rdx,rdx
-		0x48, 0x83, 0xC2, 0x01, //  add rdx,byte +0x0
-		0x48, 0x83, 0xEC, 0x28, // sub rsp,0x28
+		0x48, 0x83, 0xC2, 0x01, //  add rdx,byte +0x0 (add 1 bit to rdx)
+		0x48, 0x83, 0xEC, 0x28, // sub rsp,0x28 (align the stack and shadow space allocation)
 		0xFF, 0xD0, // call rax 
 		0x48, 0x83, 0xC4, 0x28, // add rsp,0x28
-		0x58, // pop rax
-		0x5A, // pop rdx
-		0xC3 // ret
+		0x58, // pop rax (restore rax)
+		0x5A, // pop rdx (restore rdx)
+		0xC3 // ret (return)
 	};
-
 
 	// note 0x1020 is an RVA to where the location that i want to jmp to. to get there we need to add image base + rva
 	*(std::uintptr_t*)(shellcode + 3) = (std::uintptr_t)m_image + 0x1020; // Hardcoded offset
 
+	/*
+	TODO : use code cave for shellcode instead of allocating it to be extra stealth
+	*/
 
 	// allocate memory for our shellcode inside target process
 	auto pShellCode = VirtualAllocEx(memory::get_handle(), nullptr, sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
@@ -168,6 +145,7 @@ bool Edmapper::dll_map::map_dll()
 
 	std::printf("[+]Allocated memory for shellcode at : %p \n", pShellCode);
 
+	// write our shellcode into memory
 	if (!memory::Write((std::uintptr_t)pShellCode, shellcode, sizeof(shellcode)))
 	{
 		delete[] this->rawDll_data;
@@ -178,10 +156,20 @@ bool Edmapper::dll_map::map_dll()
 		return false;
 	}
 
-	/*
-	TODO : hook a function to execute our shellcode instead of creating a thread.
-	*/
 
+	if (!hook_iat_function(memory::GetModuleBase(proccess_name.data()), "MessageBoxW", pShellCode))
+	{
+		delete[] this->rawDll_data;
+		VirtualFreeEx(memory::get_handle(), this->m_image, 0, MEM_RELEASE);
+		VirtualFreeEx(memory::get_handle(), pShellCode, 0, MEM_RELEASE);
+		VirtualFree(this->l_image, 0, MEM_RELEASE);
+		std::cerr << "[ERROR] failed to hook function pointer[IAT]." << '\n';
+		return false;
+	}
+
+	// print msg here.
+
+	/*
 	// this will execute our shellcode inside the target process
 	auto thread_h = CreateRemoteThread(memory::get_handle(), 0, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(pShellCode), 0, 0, 0);
 	if (!thread_h)
@@ -198,7 +186,7 @@ bool Edmapper::dll_map::map_dll()
 	WaitForSingleObject(thread_h, INFINITE);
 
 	// close thread handle.
-	CloseHandle(thread_h);
+	CloseHandle(thread_h); */
 	// free shellcode in our target process
 	VirtualFreeEx(memory::get_handle(), pShellCode, 0, MEM_RELEASE);
 	// free local image

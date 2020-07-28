@@ -5,6 +5,7 @@
 #include <memory>
 #include "memory/memory_handlers.hpp"
 #include "pe/portable_executable.hpp"
+#include "hook/iat_hook.hpp"
 
 
 
@@ -20,8 +21,7 @@ namespace Edmapper {
 		PVOID m_image = nullptr;
 		PVOID l_image = nullptr;
 	public:
-		bool dll_map_init(std::string_view proccess_name,std::string_view dll_path);
-		bool map_dll();
+		bool map_dll(const std::string_view proccess_name, const std::string_view dll_path);
 	};
 }
 
