@@ -24,7 +24,7 @@ namespace memory{
 			using pointer = HANDLE;
 			void operator()(HANDLE handle)
 			{
-				if (handle != NULL || handle != INVALID_HANDLE_VALUE)
+				if (handle)
 					CloseHandle(handle);
 			}
 		};

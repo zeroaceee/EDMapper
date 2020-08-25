@@ -1,33 +1,59 @@
 #include "edmapper.hpp"
 
-bool Edmapper::dll_map::map_dll(const std::string_view proccess_name, const std::string_view dll_path)
+
+Edmapper::dll_map::~dll_map()
+{
+	if(this->rawDll_data)
+		delete[] this->rawDll_data; // free allocated raw dll data
+	
+	if(this->l_image)
+		VirtualFree(this->l_image, 0, MEM_RELEASE); // free local image
+
+	if(this->m_image)
+		VirtualFreeEx(memory::get_handle(), this->m_image, 0, MEM_RELEASE); // free mapped image
+
+	if (this->pShellCode)
+		VirtualFreeEx(memory::get_handle(), pShellCode, 0, MEM_RELEASE); // free mapped shellcode memory
+}
+
+
+bool Edmapper::dll_map::map_dll(const std::string_view proccess_name, const std::string_view dll_path, const std::string_view iat_functionName_to_hijack)
 {
 	// get process id
 
 	if (!memory::GetProcessID(proccess_name))
+	{
+		std::cerr << "[-] couldn't obtain process id aborting." << '\n';
 		return false;
-
+	}
+		
 	this->process_id = memory::return_processid();
 
 	// open handle to process
 
 	if (!memory::OpenProcessHandle(this->process_id))
+	{
+		std::cerr << "[-] failed to open handle to process." << '\n';
 		return false;
+	}
+		
 
 	// open our dll file & get data
 	if (!memory::GetRawDataFromFile(dll_path, this->rawDll_data, this->rawDll_dataSize))
+	{
+		std::cerr << "[-] failed to open file." << '\n';
 		return false;
+	}
+		
 
 	// validate image
 	this->pnt_headers = portable_exe::IsValidImage(this->rawDll_data);
 
 	if (this->pnt_headers == nullptr)
-	{
-		delete[] this->rawDll_data;
 		return false;
-	}
 	else
-		std::printf("Valid image.\n");
+		std::printf("[+] image is valid.\n");
+	
 
 	// allocate local image 
 	const auto image_size = this->pnt_headers->OptionalHeader.SizeOfImage;
@@ -36,9 +62,10 @@ bool Edmapper::dll_map::map_dll(const std::string_view proccess_name, const std:
 
 	if (!this->l_image)
 	{
-		delete[] this->rawDll_data;
+		std::cerr << "[-] failed allocate local image memory." << '\n';
 		return false;
 	}
+		
 
 	// copy all headers from our dll image.
 	std::memcpy(l_image, rawDll_data, this->pnt_headers->OptionalHeader.SizeOfHeaders);
@@ -47,19 +74,17 @@ bool Edmapper::dll_map::map_dll(const std::string_view proccess_name, const std:
 	// copy sections into local image.
 	portable_exe::CopyImageSections(this->l_image, this->pnt_headers, this->rawDll_data);
 
-	std::printf("Sections copied.\n");
+	std::printf("[+] copied sections.\n");
 
 	// fix imports
 
 	if (!portable_exe::FixImageImports(this->l_image, this->pnt_headers, this->rawDll_data))
 	{
-		// no need to delete this->rawDll_data since this function already does that.
-		std::cerr << "[ERROR] couldn't fix image imports" << '\n';
-		VirtualFree(this->l_image, 0, MEM_RELEASE);
+		std::cerr << "[-] couldn't fix image imports." << '\n';	
 		return false;
 	}
 
-	std::printf("Imports fixed.\n");
+	std::printf("[+] fixed imports.\n");
 
 	// allocate image in target process
 
@@ -74,19 +99,16 @@ bool Edmapper::dll_map::map_dll(const std::string_view proccess_name, const std:
 		// but we will need to fix relocation of image
 		this->m_image = VirtualAllocEx(memory::get_handle(), nullptr, image_size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
 
-		// if faild to allocate then cleanup & return
 		if (!this->m_image)
 		{
-			delete[] this->rawDll_data;
-			VirtualFree(this->l_image, 0, MEM_RELEASE);
-			std::cerr << "[ERROR] couldn't allocate memory in target process." << '\n';
+			std::cerr << "[-] couldn't allocate memory in target process." << '\n';
 			return false;
 		}
 
 		// fix relocation
 		portable_exe::FixImageRelocations(this->m_image, this->l_image, this->pnt_headers, this->rawDll_data);
 
-		std::printf("Fixed relocations!\n");
+		std::printf("[+] Fixed relocations!\n");
 	}
 
 	// no need to fix relocations since we loaded at prefered base address.
@@ -94,101 +116,53 @@ bool Edmapper::dll_map::map_dll(const std::string_view proccess_name, const std:
 	// write content of our dll aka local image into the allocated memory in target process
 	if (!memory::Write(reinterpret_cast<std::uintptr_t>(this->m_image), this->l_image, image_size))
 	{
-		delete[] this->rawDll_data;
-		VirtualFree(this->l_image, 0, MEM_RELEASE);
-		VirtualFreeEx(memory::get_handle(), this->m_image, 0, MEM_RELEASE);
-		std::cerr << "[ERROR] couldn't copy image to target process." << '\n';
+		std::cerr << "[-] couldn't copy image to target process." << '\n';
 		return false;
 	}
 
-	std::printf("Wrote image to target process.\n");
+	std::printf("[+] Wrote image to target process.\n");
 
-	// call shellcode
-
-	// get entrypoint address for our dll
-	// this->pnt_headers->OptionalHeader.AddressOfEntryPoint : is an RVA from base address
-	const auto Entryaddress = reinterpret_cast<std::uintptr_t>(this->m_image) + this->pnt_headers->OptionalHeader.AddressOfEntryPoint;
-
-
-	// hardcoded shellcode
-	BYTE shellcode[] = {
-		0x50, // push rax save old register so we don't corrupt it
-		0x48, 0xB8, 0xFF, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, // mov rax,0xff00efbeadde00ff <- this value is just a place that will get replaced by our entrypoint pointer
-		0x52, // push rdx save old register so we don't corrupt it
-		0x48, 0x31, 0xD2, // xor rdx,rdx
-		0x48, 0x83, 0xC2, 0x01, //  add rdx,byte +0x0 (add 1 bit to rdx)
-		0x48, 0x83, 0xEC, 0x28, // sub rsp,0x28 (align the stack and shadow space allocation)
-		0xFF, 0xD0, // call rax 
-		0x48, 0x83, 0xC4, 0x28, // add rsp,0x28
-		0x58, // pop rax (restore rax)
-		0x5A, // pop rdx (restore rdx)
-		0xC3 // ret (return)
-	};
-
-	// note 0x1020 is an RVA to where the location that i want to jmp to. to get there we need to add image base + rva
-	*(std::uintptr_t*)(shellcode + 3) = (std::uintptr_t)m_image + 0x1020; // Hardcoded offset
-
-	/*
-	TODO : use code cave for shellcode instead of allocating it to be extra stealth
-	*/
 
 	// allocate memory for our shellcode inside target process
-	auto pShellCode = VirtualAllocEx(memory::get_handle(), nullptr, sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (!pShellCode)
+	this->pShellCode = VirtualAllocEx(memory::get_handle(), nullptr, sizeof(assembly::shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+	if (!this->pShellCode)
 	{
-		delete[] this->rawDll_data;
-		VirtualFreeEx(memory::get_handle(), this->m_image, 0, MEM_RELEASE);
-		VirtualFree(this->l_image, 0, MEM_RELEASE);
-		std::cerr << "[ERROR] failed to allocate memory for shellcode in target process." << '\n';
+		std::cerr << "[-] failed to allocate memory for shellcode in target process." << '\n';
 		return false;
 	}
 
-	std::printf("[+]Allocated memory for shellcode at : %p \n", pShellCode);
+	std::printf("[+] Allocated memory for shellcode at : %p \n", this->pShellCode);
+
+	auto iat_func_ptr = get_ptr_to_iatfunc(memory::GetModuleBase(proccess_name.data()), iat_functionName_to_hijack.data());
+	if (!iat_func_ptr)
+		return false;
+
+	auto entrypoint_jmp = reinterpret_cast<std::uintptr_t>(this->m_image) + 0x1020;
+
+	std::uintptr_t iat_func_address = 0;
+	if (!memory::Read(iat_func_ptr, &iat_func_address, sizeof(std::uintptr_t)))
+		return false;
+
+
+	// init shellcode 
+	assembly::shellcode_insert_address<std::uintptr_t>(assembly::DLL_ENTRY_POINT, entrypoint_jmp);
+	assembly::shellcode_insert_address<std::uintptr_t>(assembly::IAT_FUNCTION_PTR, iat_func_ptr);
+	assembly::shellcode_insert_address<std::uintptr_t>(assembly::IAT_ORIGINAL_FUNCTION_ADDRESS, iat_func_address);
 
 	// write our shellcode into memory
-	if (!memory::Write((std::uintptr_t)pShellCode, shellcode, sizeof(shellcode)))
+	if (!memory::Write((std::uintptr_t)this->pShellCode, assembly::shellcode, sizeof(assembly::shellcode)))
 	{
-		delete[] this->rawDll_data;
-		VirtualFreeEx(memory::get_handle(), this->m_image, 0, MEM_RELEASE);
-		VirtualFreeEx(memory::get_handle(), pShellCode, 0, MEM_RELEASE);
-		VirtualFree(this->l_image, 0, MEM_RELEASE);
-		std::cerr << "[ERROR] failed to write shellcode to memory" << '\n';
+		std::cerr << "[-] failed to write shellcode to memory" << '\n';
 		return false;
 	}
 
-
-	if (!hook_iat_function(memory::GetModuleBase(proccess_name.data()), "MessageBoxW", pShellCode))
-	{
-		delete[] this->rawDll_data;
-		VirtualFreeEx(memory::get_handle(), this->m_image, 0, MEM_RELEASE);
-		VirtualFreeEx(memory::get_handle(), pShellCode, 0, MEM_RELEASE);
-		VirtualFree(this->l_image, 0, MEM_RELEASE);
-		std::cerr << "[ERROR] failed to hook function pointer[IAT]." << '\n';
+	if (!hook_iat_function(iat_func_ptr, this->pShellCode))
 		return false;
-	}
 
-	// print msg here.
+	std::printf("[+] shellcode executed successfully.\n");	
 
-	/*
-	// this will execute our shellcode inside the target process
-	auto thread_h = CreateRemoteThread(memory::get_handle(), 0, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(pShellCode), 0, 0, 0);
-	if (!thread_h)
-	{
-		delete[] this->rawDll_data;
-		VirtualFreeEx(memory::get_handle(), this->m_image, 0, MEM_RELEASE);
-		VirtualFreeEx(memory::get_handle(), pShellCode, 0, MEM_RELEASE);
-		VirtualFree(this->l_image, 0, MEM_RELEASE);
-		std::cerr << "[ERROR] failed to create thread in target process." << '\n';
-		return false;
-	}
-
-	// wait for the thread to finish executing shellcode.
-	WaitForSingleObject(thread_h, INFINITE);
-
-	// close thread handle.
-	CloseHandle(thread_h); */
 	// free shellcode in our target process
-	VirtualFreeEx(memory::get_handle(), pShellCode, 0, MEM_RELEASE);
+	VirtualFreeEx(memory::get_handle(), this->pShellCode, 0, MEM_RELEASE);
 	// free local image
 	VirtualFree(this->l_image, 0, MEM_RELEASE);
 	// free our raw dll data

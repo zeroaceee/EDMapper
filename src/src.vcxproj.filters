@@ -44,5 +44,8 @@
     <ClInclude Include="hook\iat_hook.hpp">
       <Filter>Source Files\hook</Filter>
     </ClInclude>
+    <ClInclude Include="hook\shellcode.hpp">
+      <Filter>Source Files\hook</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

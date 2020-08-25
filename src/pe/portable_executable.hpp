@@ -26,7 +26,6 @@ PIMAGE_NT_HEADERS portable_exe::IsValidImage(std::uint8_t* &rawdll_image)
 	if (p_dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
 	{
 		std::printf("[-]Invalid Image type.\n");
-		delete[] rawdll_image;
 		return nullptr;
 	}
 		
@@ -36,7 +35,6 @@ PIMAGE_NT_HEADERS portable_exe::IsValidImage(std::uint8_t* &rawdll_image)
 	if (p_ntHeaders->Signature != IMAGE_NT_SIGNATURE)
 	{
 		std::printf("[-]Invalid nt_headers signature.\n");
-		delete[] rawdll_image;
 		return nullptr;
 	}
 	
@@ -44,7 +42,6 @@ PIMAGE_NT_HEADERS portable_exe::IsValidImage(std::uint8_t* &rawdll_image)
 	if (p_ntHeaders->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC)
 	{
 		std::printf("[-]Image is not 64 bit.\n");
-		delete[] rawdll_image;
 		return nullptr;
 	}
 
@@ -84,12 +81,9 @@ bool portable_exe::FixImageImports(const void* image, const PIMAGE_NT_HEADERS pn
 	pImportDesc = reinterpret_cast<PIMAGE_IMPORT_DESCRIPTOR>(
 		reinterpret_cast<std::uintptr_t>(image) + pnt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
 
-	// if we couldn't get the address of our .idata section then cleanup & return
+	// if we couldn't get the address of our .idata section then return
 	if (!pImportDesc)
-	{
-		delete[] rawdll_image;
 		return false;
-	}
 		
 	// loop through all imported dll's until we get to the last one
 	while (pImportDesc->Name != NULL)
@@ -103,10 +97,7 @@ bool portable_exe::FixImageImports(const void* image, const PIMAGE_NT_HEADERS pn
 		
 		// if we couldn't obatin base of MODULE DLL return false
 		if (!ModuleBase)
-		{
-			delete[] rawdll_image;
 			return false;
-		}
 		
 		
 		PIMAGE_THUNK_DATA pFirst_thunkData = nullptr;
@@ -124,12 +115,9 @@ bool portable_exe::FixImageImports(const void* image, const PIMAGE_NT_HEADERS pn
 		// ^^  these array's points to  structs each struct contains either an ordinal number for an imported function name.
 		// difference is FirstThunk get overwritten by windows loader while OriginalFirstThunk does not and contains original information about imported functions.
 
-		// if not found  cleanup resources & abort something is wrong
+		// if not found  return
 		if (!pFirst_thunkData && !pOriginalFirst_thunkData)
-		{
-			delete[] rawdll_image;
 			return false;
-		}
 		
 		std::uintptr_t Function_address = 0;
 
@@ -174,18 +162,12 @@ bool portable_exe::FixImageImports(const void* image, const PIMAGE_NT_HEADERS pn
 		    // if we tried to call it , it will crash so we need to add base address of MODULE DLL + Function offset
 		    // so it can get called normally.
 
+			// why storing result address in FirstThunk not OriginalFirstThunk since FirstThunk is the one that gets overwritten by windows loader
 			if (Function_address)
-			{
-				// why storing result address in FirstThunk not OriginalFirstThunk since FirstThunk is the one that gets overwritten by windows loader
 				pFirst_thunkData->u1.Function = Function_address;
-			}
 			else
-			{
-				std::cerr << "[ERROR]Couldn't find address of function!" << " " << ":" << "Inside MODULE DLL :" << ModuleName << '\n';
-				delete[] rawdll_image;
 				return false;
-			}
-
+			
 			// advance to second struct in our array to get imported function in current module.
 			pOriginalFirst_thunkData++;
 			pFirst_thunkData++;
@@ -205,13 +187,8 @@ void portable_exe::FixImageRelocations(void* mapped_image, void* local_image, co
 	auto pRelocation_dir = reinterpret_cast<PIMAGE_BASE_RELOCATION>(
 		reinterpret_cast<std::uintptr_t>(local_image) + pnt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
 	
-
-	
 	if (!pRelocation_dir)
-	{
-		delete[] rawdll_image;
 		return;
-	}
 
 
 	// we can't compare address's using < or > operators since we will get undefined behavior
