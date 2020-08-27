@@ -71,29 +71,17 @@ namespace memory{
 	
 	inline bool Read(std::uintptr_t address, void* buffer, size_t size)
 	{
-		if (ReadProcessMemory(memory::get_handle(), reinterpret_cast<LPVOID>(address), buffer, size, nullptr))
-			return true;
-		else
-			return false;
-		
+		return ReadProcessMemory(memory::get_handle(), reinterpret_cast<LPVOID>(address), buffer, size, nullptr);
 	}
-
 
 	inline bool Write(std::uintptr_t address, void* buffer, size_t size)
 	{
-		if (WriteProcessMemory(memory::get_handle(), reinterpret_cast<LPVOID>(address), buffer, size, nullptr))
-			return true;
-		else
-			return false;
+		return WriteProcessMemory(memory::get_handle(), reinterpret_cast<LPVOID>(address), buffer, size, nullptr);
 	}
 
 	inline bool VirtualprotectExPage(std::uintptr_t address, size_t size,DWORD protection,PDWORD old_protection)
 	{
-		if (VirtualProtectEx(memory::get_handle(), reinterpret_cast<LPVOID>(address), size, protection, old_protection))
-			return true;
-		else
-			return false;
-			
+		return VirtualProtectEx(memory::get_handle(), reinterpret_cast<LPVOID>(address), size, protection, old_protection);
 	}
 
 	inline std::size_t VirtualQueryExPage(std::uintptr_t address,MEMORY_BASIC_INFORMATION &mb)
