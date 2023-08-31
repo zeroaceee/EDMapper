@@ -5,7 +5,7 @@ c++ language and to explain how does manual mapping works step by step.
 ## example usage
 open cmd navigate to where the EDMapper.exe is located and type
 `EDMapper.exe notepad.exe C:\\test.dll MessageBoxA`
-* note that you need to specify a function that get's caled offten
+* note that you need to specify a function that get's called frequently
 in order for this injector to work.
 
 ## assembly ref
